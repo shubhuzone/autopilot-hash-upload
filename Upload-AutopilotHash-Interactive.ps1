@@ -16,6 +16,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Reset PSModulePath to only the standard machine/user paths. This avoids a known
+# issue where PowerShell 7 (pwsh) module paths leak into a Windows PowerShell 5.1
+# session and cause "module found but could not be loaded" errors for
+# PackageManagement / PowerShellGet.
+$env:PSModulePath = [System.Environment]::GetEnvironmentVariable("PSModulePath","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PSModulePath","User")
+
 New-Item -ItemType Directory -Force -Path (Split-Path $LogPath) | Out-Null
 Start-Transcript -Path $LogPath -Append | Out-Null
 
@@ -37,7 +44,12 @@ try {
     catch {
         Write-Log "WARNING: NuGet provider check/install failed ($($_.Exception.Message)) - continuing, later steps will retry it."
     }
-    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+    try {
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction Stop -WarningAction SilentlyContinue
+    }
+    catch {
+        Write-Log "WARNING: Set-PSRepository failed ($($_.Exception.Message)) - continuing anyway."
+    }
 
     # --- Step 2: Get-WindowsAutopilotInfo script (fatal if this fails - we can't continue without it) ---
     Write-Log "Ensuring Get-WindowsAutopilotInfo script..."
