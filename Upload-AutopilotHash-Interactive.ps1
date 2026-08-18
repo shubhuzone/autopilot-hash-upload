@@ -24,19 +24,36 @@ function Write-Log { param($msg) Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+    # --- Step 1: NuGet provider (non-fatal - Install-Script/Install-Module will
+    # also try to pull this in on their own if it's still missing) ---
     Write-Log "Ensuring NuGet provider..."
-    if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
-        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers | Out-Null
+    try {
+        Import-Module PackageManagement -Force -ErrorAction Stop
+        $hasNuGet = Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue
+        if (-not $hasNuGet) {
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers -ErrorAction Stop | Out-Null
+        }
+    }
+    catch {
+        Write-Log "WARNING: NuGet provider check/install failed ($($_.Exception.Message)) - continuing, later steps will retry it."
     }
     Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
 
+    # --- Step 2: Get-WindowsAutopilotInfo script (fatal if this fails - we can't continue without it) ---
     Write-Log "Ensuring Get-WindowsAutopilotInfo script..."
     if (-not (Get-InstalledScript -Name Get-WindowsAutopilotInfo -ErrorAction SilentlyContinue)) {
-        Install-Script -Name Get-WindowsAutopilotInfo -Force -Scope AllUsers -Confirm:$false
+        Install-Script -Name Get-WindowsAutopilotInfo -Force -Scope AllUsers -Confirm:$false -ErrorAction Stop
     }
 
-    if (-not (Get-Module -ListAvailable -Name WindowsAutopilotIntune)) {
-        Install-Module -Name WindowsAutopilotIntune -Force -Scope AllUsers -AllowClobber -Confirm:$false
+    # --- Step 3: WindowsAutopilotIntune module (non-fatal - Get-WindowsAutopilotInfo
+    # will pull it in itself if missing) ---
+    try {
+        if (-not (Get-Module -ListAvailable -Name WindowsAutopilotIntune)) {
+            Install-Module -Name WindowsAutopilotIntune -Force -Scope AllUsers -AllowClobber -Confirm:$false -ErrorAction Stop
+        }
+    }
+    catch {
+        Write-Log "WARNING: WindowsAutopilotIntune module pre-install failed ($($_.Exception.Message)) - continuing, the next step will retry it."
     }
 
     $scriptPath = (Get-InstalledScript -Name Get-WindowsAutopilotInfo).Path
