@@ -39,7 +39,9 @@ try {
         $hasNuGet = Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue
         if (-not $hasNuGet) {
             $job = Start-Job -ScriptBlock {
-                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers -Confirm:$false
+                $ConfirmPreference = 'None'
+                $ProgressPreference = 'SilentlyContinue'
+                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false -Scope AllUsers
             }
             $done = Wait-Job -Job $job -Timeout 45
             if (-not $done) {
@@ -64,7 +66,9 @@ try {
     Write-Log "Ensuring Get-WindowsAutopilotInfo script..."
     if (-not (Get-InstalledScript -Name Get-WindowsAutopilotInfo -ErrorAction SilentlyContinue)) {
         $job = Start-Job -ScriptBlock {
-            Install-Script -Name Get-WindowsAutopilotInfo -Force -Scope AllUsers -Confirm:$false
+            $ConfirmPreference = 'None'
+            $ProgressPreference = 'SilentlyContinue'
+            Install-Script -Name Get-WindowsAutopilotInfo -Force -Confirm:$false -Scope AllUsers
         }
         $done = Wait-Job -Job $job -Timeout 90
         if (-not $done) {
@@ -81,7 +85,9 @@ try {
     try {
         if (-not (Get-Module -ListAvailable -Name WindowsAutopilotIntune)) {
             $job = Start-Job -ScriptBlock {
-                Install-Module -Name WindowsAutopilotIntune -Force -Scope AllUsers -AllowClobber -Confirm:$false
+                $ConfirmPreference = 'None'
+                $ProgressPreference = 'SilentlyContinue'
+                Install-Module -Name WindowsAutopilotIntune -Force -Confirm:$false -Scope AllUsers -AllowClobber
             }
             $done = Wait-Job -Job $job -Timeout 90
             if (-not $done) {
@@ -97,7 +103,25 @@ try {
         Write-Log "WARNING: WindowsAutopilotIntune module pre-install failed ($($_.Exception.Message)) - continuing, the next step will retry it."
     }
 
-    $scriptPath = (Get-InstalledScript -Name Get-WindowsAutopilotInfo).Path
+    # Resolve the installed script's path robustly - Get-InstalledScript's object
+    # doesn't reliably expose a usable .Path property across PowerShellGet versions.
+    $scriptPath = $null
+    $candidatePaths = @(
+        (Join-Path $env:ProgramFiles "WindowsPowerShell\Scripts\Get-WindowsAutopilotInfo.ps1"),
+        (Join-Path ${env:ProgramFiles(x86)} "WindowsPowerShell\Scripts\Get-WindowsAutopilotInfo.ps1"),
+        (Join-Path $HOME "Documents\WindowsPowerShell\Scripts\Get-WindowsAutopilotInfo.ps1")
+    )
+    foreach ($p in $candidatePaths) {
+        if ($p -and (Test-Path $p)) { $scriptPath = $p; break }
+    }
+    if (-not $scriptPath) {
+        $cmd = Get-Command Get-WindowsAutopilotInfo.ps1 -ErrorAction SilentlyContinue
+        if ($cmd) { $scriptPath = $cmd.Source }
+    }
+    if (-not $scriptPath) {
+        throw "Could not locate Get-WindowsAutopilotInfo.ps1 after install - checked standard AllUsers/CurrentUser script paths."
+    }
+    Write-Log "Using script at: $scriptPath"
 
     Write-Log "Uploading hardware hash to Intune - sign in when prompted..."
     $params = @{
