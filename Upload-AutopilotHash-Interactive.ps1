@@ -31,14 +31,23 @@ function Write-Log { param($msg) Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-    # --- Step 1: NuGet provider (non-fatal - Install-Script/Install-Module will
-    # also try to pull this in on their own if it's still missing) ---
+    # --- Step 1: NuGet provider (non-fatal, time-boxed - Install-Script/Install-Module
+    # will also try to pull this in on their own if it's still missing) ---
     Write-Log "Ensuring NuGet provider..."
     try {
         Import-Module PackageManagement -Force -ErrorAction Stop
         $hasNuGet = Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue
         if (-not $hasNuGet) {
-            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers -ErrorAction Stop | Out-Null
+            $job = Start-Job -ScriptBlock {
+                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers -Confirm:$false
+            }
+            $done = Wait-Job -Job $job -Timeout 45
+            if (-not $done) {
+                Stop-Job -Job $job | Out-Null
+                throw "Install-PackageProvider timed out after 45s (likely a network/proxy block reaching the NuGet provider feed)."
+            }
+            Receive-Job -Job $job -ErrorAction Stop | Out-Null
+            Remove-Job -Job $job -Force
         }
     }
     catch {
@@ -54,14 +63,34 @@ try {
     # --- Step 2: Get-WindowsAutopilotInfo script (fatal if this fails - we can't continue without it) ---
     Write-Log "Ensuring Get-WindowsAutopilotInfo script..."
     if (-not (Get-InstalledScript -Name Get-WindowsAutopilotInfo -ErrorAction SilentlyContinue)) {
-        Install-Script -Name Get-WindowsAutopilotInfo -Force -Scope AllUsers -Confirm:$false -ErrorAction Stop
+        $job = Start-Job -ScriptBlock {
+            Install-Script -Name Get-WindowsAutopilotInfo -Force -Scope AllUsers -Confirm:$false
+        }
+        $done = Wait-Job -Job $job -Timeout 90
+        if (-not $done) {
+            Stop-Job -Job $job | Out-Null
+            Remove-Job -Job $job -Force
+            throw "Install-Script for Get-WindowsAutopilotInfo timed out after 90s - check internet/proxy access to PowerShell Gallery."
+        }
+        Receive-Job -Job $job -ErrorAction Stop | Out-Null
+        Remove-Job -Job $job -Force
     }
 
-    # --- Step 3: WindowsAutopilotIntune module (non-fatal - Get-WindowsAutopilotInfo
+    # --- Step 3: WindowsAutopilotIntune module (non-fatal, time-boxed - Get-WindowsAutopilotInfo
     # will pull it in itself if missing) ---
     try {
         if (-not (Get-Module -ListAvailable -Name WindowsAutopilotIntune)) {
-            Install-Module -Name WindowsAutopilotIntune -Force -Scope AllUsers -AllowClobber -Confirm:$false -ErrorAction Stop
+            $job = Start-Job -ScriptBlock {
+                Install-Module -Name WindowsAutopilotIntune -Force -Scope AllUsers -AllowClobber -Confirm:$false
+            }
+            $done = Wait-Job -Job $job -Timeout 90
+            if (-not $done) {
+                Stop-Job -Job $job | Out-Null
+                Remove-Job -Job $job -Force
+                throw "Install-Module for WindowsAutopilotIntune timed out after 90s."
+            }
+            Receive-Job -Job $job -ErrorAction Stop | Out-Null
+            Remove-Job -Job $job -Force
         }
     }
     catch {
