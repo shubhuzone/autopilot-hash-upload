@@ -136,7 +136,8 @@ try {
 
     if ($RestartAfter) {
         Write-Log "Restarting device in 10 seconds so it can re-check-in at OOBE..."
-        Restart-Computer -Force -Delay 10
+        Start-Sleep -Seconds 10
+        Restart-Computer -Force
     }
     exit 0
 }
