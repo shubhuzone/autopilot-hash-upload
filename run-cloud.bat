@@ -9,10 +9,13 @@ REM ============================================================
 
 setlocal
 
+if not exist "C:\Temp" mkdir "C:\Temp"
+cd /d C:\Temp
+
 REM --- EDIT THIS: direct HTTPS link to the raw .ps1 file ---
 set SCRIPT_URL=https://raw.githubusercontent.com/shubhuzone/autopilot-hash-upload/main/Upload-AutopilotHash-Interactive.ps1
 
-set TEMPDIR=%TEMP%\AutopilotUpload
+set TEMPDIR=C:\Temp\AutopilotUpload
 set SCRIPT=%TEMPDIR%\Upload-AutopilotHash-Interactive.ps1
 
 if not exist "%TEMPDIR%" mkdir "%TEMPDIR%"
